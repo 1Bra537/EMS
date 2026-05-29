@@ -148,6 +148,7 @@ async function loginUser() {
         }
         if (currentRole === 'employee') {
           loadCompanyList();
+          loadEmployeeJobs();
         }
       }, 600);
     } else {
@@ -192,6 +193,7 @@ async function signupUser() {
         }
         if (currentRole === 'employee') {
           loadCompanyList();
+          loadEmployeeJobs();
         }
       }, 600);
     } else {
@@ -238,6 +240,17 @@ qsa('.ps-nav-item').forEach(item => {
     const step = item.dataset.step;
     portal.querySelectorAll('.portal-step').forEach(s => s.classList.remove('active'));
     document.getElementById(step)?.classList.add('active');
+    
+    // Auto-reload data when switching tabs
+    if (step === 'emp-enrolled') {
+      loadEmployeeJobs();
+    }
+    if (step === 'emp-companies') {
+      loadCompanyList();
+    }
+    if (step === 'mgr-companies' || step === 'hr-companies') {
+      loadCompanyTabs();
+    }
   });
 });
 
@@ -299,44 +312,40 @@ document.getElementById('empCompSearch').addEventListener('input', function() {
   });
 });
 
-const ROLES_DATA = {
-  '1': [ // TechCorp
-    { title: 'Senior Software Engineer', desc: 'Full-stack development & architecture', salary: '$120,000', duration: '12 months', pay: 'Monthly', bonus: '$5,000', benefits: 'Health, Remote' },
-    { title: 'DevOps Engineer',          desc: 'CI/CD pipelines, cloud infrastructure', salary: '$105,000', duration: '12 months', pay: 'Monthly', bonus: '$3,000', benefits: 'Health, Remote' },
-  ],
-  '2': [ // BizHub
-    { title: 'Product Designer',  desc: 'UI/UX design across all products', salary: '$85,000', duration: '6 months', pay: 'Bi-weekly', bonus: '$2,000', benefits: 'Equity, Hybrid' },
-    { title: 'Business Analyst',  desc: 'Process mapping and optimisation', salary: '$78,000', duration: '12 months', pay: 'Monthly',  bonus: '$1,500', benefits: 'Health' },
-  ],
-  '3': [ // FinGroup
-    { title: 'Financial Analyst', desc: 'Investment advisory and reporting', salary: '$75,000', duration: '24 months', pay: 'Monthly', bonus: '$4,000', benefits: '401k, Dental' },
-  ],
-};
-
-function openCompanyRoles(companyName, companyID) {
+async function openCompanyRoles(companyName, companyID) {
   const panel = document.getElementById('empRolesPanel');
   document.getElementById('rolesPanelTitle').textContent = `Roles at ${companyName}`;
   const list = document.getElementById('empRolesList');
-  const roles = ROLES_DATA[String(companyID)] ?? [];
-  list.innerHTML = roles.length === 0
-    ? '<p class="muted-sm">No roles listed for this company yet.</p>'
-    : roles.map(r => `
-    <div class="role-row">
-      <div class="role-row-info">
-        <h4>${r.title}</h4>
-        <p>${r.desc} · ${r.duration} · ${r.pay}</p>
+  
+  try {
+    const res = await fetch(`http://localhost:8080/${companyID}/roles`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const roles = await res.json();
+    
+    list.innerHTML = roles.length === 0
+      ? '<p class="muted-sm">No roles listed for this company yet.</p>'
+      : roles.map(r => `
+      <div class="role-row">
+        <div class="role-row-info">
+          <h4>${r.roleName || 'Role'}</h4>
+          <p>${r.description || ''} · ${r.duration || ''} · ${r.payFreq || ''}</p>
+        </div>
+        <div class="role-row-salary">${r.currency || '$'}${r.salaryAmount?.toLocaleString() ?? '0'}</div>
+        <div class="role-row-chips">
+          <span class="role-chip">${r.currency || '$'}${r.bonus?.toLocaleString() ?? '0'} bonus</span>
+          <span class="role-chip">${r.benefits || ''}</span>
+        </div>
+        <button class="portal-btn primary sm"
+          onclick="enrollInRole('${companyName.replace(/'/g,"\\'")}','${companyID}','${(r.roleName || '').replace(/'/g,"\\'")}')">
+          <i class="ti ti-user-plus"></i> Enroll
+        </button>
       </div>
-      <div class="role-row-salary">${r.salary}</div>
-      <div class="role-row-chips">
-        <span class="role-chip">${r.bonus} bonus</span>
-        <span class="role-chip">${r.benefits}</span>
-      </div>
-      <button class="portal-btn primary sm"
-        onclick="enrollInRole('${companyName.replace(/'/g,"\\'")}','${companyID}','${r.title.replace(/'/g,"\\'")}')">
-        <i class="ti ti-user-plus"></i> Enroll
-      </button>
-    </div>
-  `).join('');
+    `).join('');
+  } catch (e) {
+    console.error('Could not load company roles', e);
+    list.innerHTML = '<p class="muted-sm">Failed to load roles from server.</p>';
+  }
+  
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -354,7 +363,10 @@ async function enrollInRole(company, companyID, role) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(1000) 
     });
-    if (res.ok) showToast('Enrolled', `Enrolled as ${role} at ${company}.`, 'success');
+    if (res.ok) {
+      showToast('Enrolled', `Enrolled as ${role} at ${company}.`, 'success');
+      loadEmployeeJobs();
+    }
   } catch(e) { console.error(e); }
 }
 
@@ -385,8 +397,12 @@ async function setAttendance(btn, companyId) {
 // COMPANY TABS — load dynamically for Manager & HR portals
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadCompanyTabs() {
+  const userId = currentUserId ?? 1;
+  const url = currentRole === 'manager' || currentRole === 'hr'
+    ? `http://localhost:8080/User/director/${userId}/companies`
+    : `http://localhost:8080/companies`;
   try {
-    const res = await fetch('http://localhost:8080/companies');
+    const res = await fetch(url);
     if (!res.ok) return;
     const companies = await res.json();
     renderCompanyTabs(companies);
@@ -467,21 +483,26 @@ function openSubTab(clickedTab, panelId) {
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadCompanyData(companyId, prefix) {
   if (!companyId) return;
+  const userId = currentUserId ?? 1;
   try {
     const [empRes, appRes] = await Promise.all([
-      fetch(`http://localhost:8080/User/director/company/${companyId}/employees`),
-      fetch(`http://localhost:8080/Company/${companyId}/applicants`)
+      fetch(`http://localhost:8080/User/director/${userId}/company/${companyId}/employees`),
+      fetch(`http://localhost:8080/User/director/${userId}/company/${companyId}/applicants`)
     ]);
 
     if (empRes.ok) {
       const employees = await empRes.json();
       renderEmployeesTable(employees, companyId, prefix);
+    } else if (empRes.status === 403) {
+      console.warn('Access denied: not your company');
     }
 
     if (appRes.ok) {
       const appData = await appRes.json();
       const applicants = appData.applicants ?? appData;
       renderApplicantsTable(applicants, companyId, prefix);
+    } else if (appRes.status === 403) {
+      console.warn('Access denied: not your company');
     }
   } catch (e) {
     console.error('Could not load company data', e);
@@ -584,52 +605,21 @@ function renderApplicantsTable(applicants, companyId, prefix) {
 // HIRE EMPLOYEE — called from applicants table
 // ──────────────────────────────────────────────────────────────────────────────
 async function hireApplicant(empId, companyId, empName, rowEl) {
+  const userId = currentUserId ?? 1;
   try {
-    const res = await fetch(`http://localhost:8080/User/director/company/${companyId}/hire/${empId}`, {
+    const res = await fetch(`http://localhost:8080/User/director/${userId}/company/${companyId}/hire/${empId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
 
     if (res.ok) {
       showToast('Hired!', `${empName} has been hired and is now Active.`, 'success');
-
-      // 1. Remove the applicant row from the applicants table
-      if (rowEl) rowEl.remove();
-
-      // 2. Add the new employee to the employees table immediately
       const prefix = currentRole === 'hr' ? 'hr' : 'mgr';
-      const tbodyId = prefix === 'mgr' ? 'mgrEmployeesBody' : 'hrEmployeesBody';
-      const tbody = document.getElementById(tbodyId);
-      if (tbody) {
-        // Remove the "no employees" placeholder if present
-        const placeholder = tbody.querySelector('td[colspan]');
-        if (placeholder) placeholder.closest('tr').remove();
-
-        const actionsHtml = prefix === 'mgr'
-          ? `<button class="portal-btn outline sm" onclick="openChangeStatus('${empId}','${empName.replace(/'/g,"\\'")}', this.closest('tr'))">
-               <i class="ti ti-arrows-exchange"></i> Status
-             </button>
-             <button class="portal-btn danger sm" onclick="confirmFire('${empName.replace(/'/g,"\\'")}','${companyId}','${empId}', this.closest('tr'))">
-               <i class="ti ti-user-minus"></i> Fire
-             </button>`
-          : `<button class="portal-btn outline sm" onclick="openChangeStatus('${empId}','${empName.replace(/'/g,"\\'")}', this.closest('tr'))">
-               <i class="ti ti-arrows-exchange"></i> Status
-             </button>`;
-
-        const tr = document.createElement('tr');
-        tr.dataset.empId = empId;
-        tr.innerHTML = `
-          <td><strong>${empName}</strong></td>
-          <td class="mono" style="font-size:12px">—</td>
-          <td><span class="status-badge badge-active">Active</span></td>
-          <td class="table-actions">${actionsHtml}</td>
-        `;
-        tbody.appendChild(tr);
-      }
+      loadCompanyData(companyId, prefix);
+    } else if (res.status === 403 || (await res.json?.())?.serverStatus === 'forbidden') {
+      showToast('Access Denied', 'You do not own this company.', 'danger');
     } else {
-      const err = await res.text();
       showToast('Hire failed', `Server error: ${res.status}`, 'danger');
-      console.error(err);
     }
   } catch (e) {
     showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
@@ -648,34 +638,23 @@ function openChangeStatus(empId, empName, rowEl) {
 
 async function submitChangeStatus() {
   const status = document.getElementById('statusSelect').value;
+  const userId = currentUserId ?? 1;
   try {
-    const res = await fetch(`http://localhost:8080/User/director/changeStatus/${pendingStatusTarget.id}`, {
+    const res = await fetch(`http://localhost:8080/User/director/${userId}/changeStatus/${pendingStatusTarget.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(status)
     });
 
     if (res.ok) {
-      showToast('Status updated', `${pendingStatusTarget.name}'s status changed to "${status}".`, 'success');
-
-      // Update the status badge in the DOM
-      const rowEl = pendingStatusTarget.rowEl;
-      if (rowEl) {
-        const badge = rowEl.querySelector('.status-badge');
-        if (badge) {
-          badge.textContent = status;
-          badge.className = `status-badge ${statusBadgeClass(status)}`;
-        }
-
-        // If promoted to Manager / HR Manager / Director — remove row from employees table
-        const promotions = ['manager', 'hr manager', 'director'];
-        if (promotions.includes(status.toLowerCase())) {
-          setTimeout(() => {
-            rowEl.style.transition = 'opacity 0.4s';
-            rowEl.style.opacity = '0';
-            setTimeout(() => rowEl.remove(), 400);
-          }, 800);
-          showToast('Promoted!', `${pendingStatusTarget.name} has been promoted to ${status}.`, 'success');
+      const data = await res.json();
+      if (data.serverStatus === 'forbidden') {
+        showToast('Access Denied', 'This employee is not in your company.', 'danger');
+      } else {
+        showToast('Status updated', `${pendingStatusTarget.name}'s status changed to "${status}".`, 'success');
+        const prefix = currentRole === 'hr' ? 'hr' : 'mgr';
+        if (currentCompanyId) {
+          loadCompanyData(currentCompanyId, prefix);
         }
       }
     } else {
@@ -698,21 +677,20 @@ function confirmFire(name, companyID, empId, rowEl) {
 }
 
 async function submitFire() {
+  const userId = currentUserId ?? 1;
   try {
-    const res = await fetch(`http://localhost:8080/User/director/${pendingFireTarget.companyID}/fire/${pendingFireTarget.empId}`, {
+    const res = await fetch(`http://localhost:8080/User/director/${userId}/company/${pendingFireTarget.companyID}/fire/${pendingFireTarget.empId}`, {
       method: 'DELETE'
     });
 
     if (res.ok) {
-      showToast('Fired', `${pendingFireTarget.name} has been removed from the company.`, 'success');
-
-      // Remove the row from the employees table immediately
-      const rowEl = pendingFireTarget.rowEl;
-      if (rowEl) {
-        rowEl.style.transition = 'opacity 0.3s, transform 0.3s';
-        rowEl.style.opacity = '0';
-        rowEl.style.transform = 'translateX(20px)';
-        setTimeout(() => rowEl.remove(), 300);
+      const data = await res.json();
+      if (data.serverStatus === 'failed') {
+        showToast('Access Denied', 'You do not own this company or employee not found.', 'danger');
+      } else {
+        showToast('Fired', `${pendingFireTarget.name} has been removed from the company.`, 'success');
+        const prefix = currentRole === 'hr' ? 'hr' : 'mgr';
+        loadCompanyData(pendingFireTarget.companyID, prefix);
       }
     } else {
       showToast('Failed', `Could not fire employee. Server error: ${res.status}`, 'danger');
@@ -739,7 +717,10 @@ async function submitQuit() {
     const res = await fetch(`http://localhost:8080/User/employee/${userId}/quit/${pendingQuitTarget.companyID}`, {
       method: 'DELETE'
     });
-    if (res.ok) showToast('Quit Job', `You have left ${pendingQuitTarget.company}.`, 'success');
+    if (res.ok) {
+      showToast('Quit Job', `You have left ${pendingQuitTarget.company}.`, 'success');
+      loadEmployeeJobs();
+    }
   } catch(e) { console.error(e); }
   closeModal('modal-quit');
 }
@@ -794,6 +775,7 @@ async function createBusiness() {
 }
 
 async function createOffer() {
+  const userId = currentUserId ?? 1;
   const companyIDText = document.getElementById('mgrCompanyID').textContent;
   const companyID = companyIDText.replace('companyID:', '').trim() || '1';
   
@@ -813,13 +795,21 @@ async function createOffer() {
   };
 
   try {
-    const res = await fetch(`http://localhost:8080/User/director/manager/company/${companyID}/createoffer`, {
+    const res = await fetch(`http://localhost:8080/User/director/${userId}/company/${companyID}/createoffer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(offer)
     });
-    if (res.ok) showToast('Success', 'Job offer created successfully.', 'success');
-    else showToast('Failed', `Server error: ${res.status}`, 'danger');
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes('Access denied')) {
+        showToast('Access Denied', 'You do not own this company.', 'danger');
+      } else {
+        showToast('Success', 'Job offer created successfully.', 'success');
+      }
+    } else {
+      showToast('Failed', `Server error: ${res.status}`, 'danger');
+    }
   } catch(e) {
     showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
     console.error(e);
@@ -898,6 +888,107 @@ function showToast(title, message, type = 'success') {
 
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.add('hidden'), 4000);
+}
+
+// DYNAMIC EMPLOYEE JOBS (ACTIVE & PENDING)
+async function loadEmployeeJobs() {
+  const userId = currentUserId ?? 1;
+  const list = document.getElementById('empEnrolledList');
+  if (!list) return;
+
+  try {
+    const res = await fetch(`http://localhost:8080/User/employee/${userId}/jobs`);
+    if (!res.ok) {
+      list.innerHTML = '<p class="muted-sm">Failed to load jobs.</p>';
+      return;
+    }
+    const jobs = await res.json();
+    renderEmployeeJobs(jobs);
+  } catch (e) {
+    console.error('Could not load employee jobs', e);
+    list.innerHTML = '<p class="muted-sm">Connection error. Make sure the backend is running.</p>';
+  }
+}
+
+function renderEmployeeJobs(jobs) {
+  const list = document.getElementById('empEnrolledList');
+  if (!list) return;
+
+  if (!jobs || jobs.length === 0) {
+    list.innerHTML = '<p class="muted-sm" style="text-align:center;padding:32px;">You are not enrolled in any jobs yet. Browse companies to apply!</p>';
+    return;
+  }
+
+  list.innerHTML = jobs.map(job => {
+    const initials = (job.companyName || 'CO').substring(0, 2).toUpperCase();
+    const isPending = job.status.toLowerCase() === 'pending';
+    
+    const statusClass = isPending ? 'badge-suspended' : 'badge-active';
+    const statusLabel = isPending ? 'Pending Approval' : job.status;
+
+    // Actions block: disabled/hidden for pending applications
+    const actionsHtml = isPending
+      ? `
+        <div class="ec-actions" style="opacity: 0.6; pointer-events: none;">
+          <div class="ec-action-group">
+            <span class="ec-action-label">Attendance (Unavailable while pending)</span>
+            <div class="clock-row">
+              <input type="time" value="08:00" class="time-input" disabled/>
+              <input type="time" value="17:00" class="time-input" disabled/>
+              <button class="portal-btn sm" disabled>Set</button>
+            </div>
+          </div>
+        </div>
+      `
+      : `
+        <div class="ec-actions">
+          <div class="ec-action-group">
+            <span class="ec-action-label">Attendance</span>
+            <div class="clock-row">
+              <div class="clock-input-wrap">
+                <label>Clock in</label>
+                <input type="time" value="08:00" class="time-input"/>
+              </div>
+              <div class="clock-input-wrap">
+                <label>Clock out</label>
+                <input type="time" value="17:00" class="time-input"/>
+              </div>
+              <button class="portal-btn primary sm" onclick="setAttendance(this, '${job.companyId}')">
+                <i class="ti ti-clock"></i> Set
+              </button>
+            </div>
+          </div>
+
+          <div class="ec-action-group">
+            <span class="ec-action-label">People</span>
+            <button class="portal-btn outline sm" onclick="handleAction('GET /user/director/company/{companyID}/employees','Loaded employee list for ${job.companyName.replace(/'/g,"\\\\'")}.')">
+              <i class="ti ti-users"></i> View Employees
+            </button>
+          </div>
+
+          <div class="ec-action-group danger-zone">
+            <span class="ec-action-label">Danger zone</span>
+            <button class="portal-btn danger sm" onclick="confirmQuit('${job.companyName.replace(/'/g,"\\\\'")}','${job.companyId}')">
+              <i class="ti ti-door-exit"></i> Quit Job
+            </button>
+          </div>
+        </div>
+      `;
+
+    return `
+      <div class="enrolled-card">
+        <div class="ec-top">
+          <div class="cc-logo tc">${initials}</div>
+          <div>
+            <h3>${job.companyName}</h3>
+            <span class="role-label">${job.role}</span>
+          </div>
+          <span class="status-badge ${statusClass}">${statusLabel}</span>
+        </div>
+        ${actionsHtml}
+      </div>
+    `;
+  }).join('');
 }
 
 //  Init
