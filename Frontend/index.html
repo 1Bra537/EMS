@@ -168,60 +168,7 @@
       </div>
 
       <div class="company-cards" id="empCompanyList">
-        <div class="company-card" data-id="1" data-name="TechCorp">
-          <div class="cc-header">
-            <div class="cc-logo tc">TC</div>
-            <div class="cc-info">
-              <h3>TechCorp</h3>
-              <p>Software & SaaS solutions</p>
-            </div>
-            <span class="cc-workers"><i class="ti ti-users"></i> 68</span>
-          </div>
-          <div class="cc-stats">
-            <span><strong>$12M</strong> net worth</span>
-            <span><strong>4</strong> open roles</span>
-            <span>Est. 2018</span>
-          </div>
-          <button class="portal-btn primary sm" onclick="openCompanyRoles('TechCorp','1')">
-            <i class="ti ti-eye"></i> View Roles
-          </button>
-        </div>
-        <div class="company-card" data-id="2" data-name="BizHub">
-          <div class="cc-header">
-            <div class="cc-logo bh">BH</div>
-            <div class="cc-info">
-              <h3>BizHub</h3>
-              <p>Business & consulting services</p>
-            </div>
-            <span class="cc-workers"><i class="ti ti-users"></i> 41</span>
-          </div>
-          <div class="cc-stats">
-            <span><strong>$5.8M</strong> net worth</span>
-            <span><strong>3</strong> open roles</span>
-            <span>Est. 2020</span>
-          </div>
-          <button class="portal-btn primary sm" onclick="openCompanyRoles('BizHub','2')">
-            <i class="ti ti-eye"></i> View Roles
-          </button>
-        </div>
-        <div class="company-card" data-id="3" data-name="FinGroup">
-          <div class="cc-header">
-            <div class="cc-logo fg">FG</div>
-            <div class="cc-info">
-              <h3>FinGroup</h3>
-              <p>Finance & investment advisory</p>
-            </div>
-            <span class="cc-workers"><i class="ti ti-users"></i> 15</span>
-          </div>
-          <div class="cc-stats">
-            <span><strong>$22M</strong> net worth</span>
-            <span><strong>1</strong> open role</span>
-            <span>Est. 2015</span>
-          </div>
-          <button class="portal-btn primary sm" onclick="openCompanyRoles('FinGroup','3')">
-            <i class="ti ti-eye"></i> View Roles
-          </button>
-        </div>
+        <p class="muted-sm">Loading companies...</p>
       </div>
 
       <!-- Roles panel (shown after clicking a company) -->
@@ -405,15 +352,12 @@
 
       <!-- Company tabs -->
       <div class="company-tabs" id="mgrCompanyTabs">
-        <button class="ctab active" data-company="TechCorp" data-id="1" onclick="selectMgrCompany(this)">TechCorp</button>
-        <button class="ctab" data-company="BizHub" data-id="2" onclick="selectMgrCompany(this)">BizHub</button>
-        <button class="ctab" data-company="FinGroup" data-id="3" onclick="selectMgrCompany(this)">FinGroup</button>
       </div>
 
       <div class="mgr-company-panel">
         <div class="mgr-panel-title">
-          <h2 id="mgrSelectedCompany">TechCorp</h2>
-          <p class="mono" id="mgrCompanyID">companyID: 1</p>
+          <h2 id="mgrSelectedCompany">Select a Company</h2>
+          <p class="mono" id="mgrCompanyID">companyID: -</p>
         </div>
 
         <!-- Sub-section tabs -->
@@ -426,44 +370,11 @@
         <!-- Employees sub-tab -->
         <div class="sub-tab-panel active" id="mgr-employees-tab">
           <div class="panel-toolbar">
-            <button class="portal-btn outline sm" onclick="handleAction('GET /user/director/company/{companyID}/employees','Employee list refreshed.')"><i class="ti ti-refresh"></i> Refresh</button>
+            <button class="portal-btn outline sm" onclick="refreshCurrentCompanyData()"><i class="ti ti-refresh"></i> Refresh</button>
           </div>
           <table class="data-table">
             <thead><tr><th>Name</th><th>Specialities</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a1">AM</div>Amina Diallo</div></td>
-                <td class="muted-sm">React, Node.js, PostgreSQL</td>
-                <td><span class="status-chip active">Active</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button class="tbl-btn" onclick="openChangeStatus('1','Amina Diallo')"><i class="ti ti-arrows-exchange"></i> Status</button>
-                    <button class="tbl-btn danger" onclick="confirmFire('Amina Diallo','1','1')"><i class="ti ti-user-minus"></i> Fire</button>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a2">JK</div>James Kuria</div></td>
-                <td class="muted-sm">Product Strategy, Agile</td>
-                <td><span class="status-chip active">Active</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button class="tbl-btn" onclick="openChangeStatus('2','James Kuria')"><i class="ti ti-arrows-exchange"></i> Status</button>
-                    <button class="tbl-btn danger" onclick="confirmFire('James Kuria','1','2')"><i class="ti ti-user-minus"></i> Fire</button>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a3">NF</div>Nina Fosse</div></td>
-                <td class="muted-sm">Figma, UI/UX, Design Systems</td>
-                <td><span class="status-chip warning">On leave</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button class="tbl-btn" onclick="openChangeStatus('3','Nina Fosse')"><i class="ti ti-arrows-exchange"></i> Status</button>
-                    <button class="tbl-btn danger" onclick="confirmFire('Nina Fosse','1','3')"><i class="ti ti-user-minus"></i> Fire</button>
-                  </div>
-                </td>
-              </tr>
+            <tbody id="mgrEmployeesBody">
             </tbody>
           </table>
         </div>
@@ -471,29 +382,11 @@
         <!-- Applicants sub-tab -->
         <div class="sub-tab-panel" id="mgr-applicants-tab">
           <div class="panel-toolbar">
-            <button class="portal-btn outline sm" onclick="handleAction('GET /company/{companyID}/applicants','Applicant list refreshed.')"><i class="ti ti-refresh"></i> Refresh</button>
+            <button class="portal-btn outline sm" onclick="refreshCurrentCompanyData()"><i class="ti ti-refresh"></i> Refresh</button>
           </div>
           <table class="data-table">
             <thead><tr><th>Applicant</th><th>Pricing bid</th><th>Resume</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a2">MW</div>Marcus Wong</div></td>
-                <td><strong class="salary">$85,000</strong></td>
-                <td><button class="tbl-btn" onclick="handleAction('GET /user/resume/{employeeID}','Loaded resume for Marcus Wong.')"><i class="ti ti-eye"></i> View Resume</button></td>
-                <td><button class="tbl-btn hire" onclick="handleAction('POST /user/director/company/{companyID}/hire/{employeeID}','Marcus Wong has been hired.')"><i class="ti ti-user-check"></i> Hire</button></td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a4">RP</div>Rashida Patel</div></td>
-                <td><strong class="salary">$72,000</strong></td>
-                <td><button class="tbl-btn" onclick="handleAction('GET /user/resume/{employeeID}','Loaded resume for Rashida Patel.')"><i class="ti ti-eye"></i> View Resume</button></td>
-                <td><button class="tbl-btn hire" onclick="handleAction('POST /user/director/company/{companyID}/hire/{employeeID}','Rashida Patel has been hired.')"><i class="ti ti-user-check"></i> Hire</button></td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a5">OA</div>Olumide Adeyemi</div></td>
-                <td><strong class="salary">$95,000</strong></td>
-                <td><button class="tbl-btn" onclick="handleAction('GET /user/resume/{employeeID}','Loaded resume for Olumide Adeyemi.')"><i class="ti ti-eye"></i> View Resume</button></td>
-                <td><button class="tbl-btn hire" onclick="handleAction('POST /user/director/company/{companyID}/hire/{employeeID}','Olumide Adeyemi has been hired.')"><i class="ti ti-user-check"></i> Hire</button></td>
-              </tr>
+            <tbody id="mgrApplicantsBody">
             </tbody>
           </table>
         </div>
@@ -645,16 +538,13 @@
         <div><h1 class="step-title">Companies</h1><p class="step-sub">Review employees and applicants across your companies</p></div>
       </div>
 
-      <div class="company-tabs">
-        <button class="ctab active" data-company="TechCorp" data-id="1" onclick="selectHRCompany(this)">TechCorp</button>
-        <button class="ctab" data-company="BizHub" data-id="2" onclick="selectHRCompany(this)">BizHub</button>
-        <button class="ctab" data-company="FinGroup" data-id="3" onclick="selectHRCompany(this)">FinGroup</button>
+      <div class="company-tabs" id="hrCompanyTabs">
       </div>
 
       <div class="mgr-company-panel">
         <div class="mgr-panel-title">
-          <h2 id="hrSelectedCompany">TechCorp</h2>
-          <p class="mono" id="hrCompanyID">companyID: 1</p>
+          <h2 id="hrSelectedCompany">Select a Company</h2>
+          <p class="mono" id="hrCompanyID">companyID: -</p>
         </div>
 
         <div class="sub-tabs">
@@ -665,33 +555,11 @@
         <!-- Employees sub-tab -->
         <div class="sub-tab-panel active" id="hr-employees-tab">
           <div class="panel-toolbar">
-            <button class="portal-btn outline sm" onclick="handleAction('GET /user/director/company/{companyID}/employees','Employee list refreshed.')"><i class="ti ti-refresh"></i> Refresh</button>
+            <button class="portal-btn outline sm" onclick="refreshCurrentCompanyData()"><i class="ti ti-refresh"></i> Refresh</button>
           </div>
           <table class="data-table">
             <thead><tr><th>Name</th><th>Specialities</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a1">AM</div>Amina Diallo</div></td>
-                <td class="muted-sm">React, Node.js, PostgreSQL</td>
-                <td><span class="status-chip active">Active</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button class="tbl-btn" onclick="openChangeStatus('1','Amina Diallo')"><i class="ti ti-arrows-exchange"></i> Status</button>
-                    <button class="tbl-btn danger" onclick="confirmFire('Amina Diallo','1','1')"><i class="ti ti-user-minus"></i> Fire</button>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a2">JK</div>James Kuria</div></td>
-                <td class="muted-sm">Product Strategy, Agile</td>
-                <td><span class="status-chip active">Active</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button class="tbl-btn" onclick="openChangeStatus('2','James Kuria')"><i class="ti ti-arrows-exchange"></i> Status</button>
-                    <button class="tbl-btn danger" onclick="confirmFire('James Kuria','1','2')"><i class="ti ti-user-minus"></i> Fire</button>
-                  </div>
-                </td>
-              </tr>
+            <tbody id="hrEmployeesBody">
             </tbody>
           </table>
         </div>
@@ -699,23 +567,11 @@
         <!-- Applicants sub-tab -->
         <div class="sub-tab-panel" id="hr-applicants-tab">
           <div class="panel-toolbar">
-            <button class="portal-btn outline sm" onclick="handleAction('GET /company/{companyID}/applicants','Applicant list refreshed.')"><i class="ti ti-refresh"></i> Refresh</button>
+            <button class="portal-btn outline sm" onclick="refreshCurrentCompanyData()"><i class="ti ti-refresh"></i> Refresh</button>
           </div>
           <table class="data-table">
             <thead><tr><th>Applicant</th><th>Pricing bid</th><th>Resume</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a2">MW</div>Marcus Wong</div></td>
-                <td><strong class="salary">$85,000</strong></td>
-                <td><button class="tbl-btn" onclick="handleAction('GET /user/resume/{employeeID}','Loaded resume for Marcus Wong.')"><i class="ti ti-eye"></i> View Resume</button></td>
-                <td><button class="tbl-btn hire" onclick="handleAction('POST /user/director/company/{companyID}/hire/{employeeID}','Marcus Wong has been hired.')"><i class="ti ti-user-check"></i> Hire</button></td>
-              </tr>
-              <tr>
-                <td><div class="person-cell"><div class="mini-av a4">RP</div>Rashida Patel</div></td>
-                <td><strong class="salary">$72,000</strong></td>
-                <td><button class="tbl-btn" onclick="handleAction('GET /user/resume/{employeeID}','Loaded resume for Rashida Patel.')"><i class="ti ti-eye"></i> View Resume</button></td>
-                <td><button class="tbl-btn hire" onclick="handleAction('POST /user/director/company/{companyID}/hire/{employeeID}','Rashida Patel has been hired.')"><i class="ti ti-user-check"></i> Hire</button></td>
-              </tr>
+            <tbody id="hrApplicantsBody">
             </tbody>
           </table>
         </div>

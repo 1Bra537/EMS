@@ -4,10 +4,11 @@
 let currentRole  = 'employee'; // employee | manager | hr
 let currentPortal = null;      // active screen id
 let currentUserId = null;      // logged-in user ID (set after login/signup)
+let currentCompanyId = null;   // currently selected company ID in mgr/hr panel
 
-let pendingFireTarget   = { name: '', companyID: '' };
+let pendingFireTarget   = { name: '', companyID: '', empId: '', rowEl: null };
 let pendingQuitTarget   = { company: '', companyID: '' };
-let pendingStatusTarget = { id: '', name: '' };
+let pendingStatusTarget = { id: '', name: '', rowEl: null };
 
 // --- RESUME API FUNCTIONS ---
 async function createResume(specialitiesId, workRecordId) {
@@ -19,7 +20,7 @@ async function createResume(specialitiesId, workRecordId) {
     return;
   }
 
-  const userId = currentUserId ?? 1; // default to 1 if not tracked yet
+  const userId = currentUserId ?? 1;
   const url = `http://localhost:8080/User/${userId}/createResume`;
 
   try {
@@ -33,9 +34,7 @@ async function createResume(specialitiesId, workRecordId) {
       document.getElementById(specialitiesId).value = '';
       document.getElementById(workRecordId).value = '';
     } else {
-      const err = await res.text();
       showToast('Failed', `Server error: ${res.status}`, 'danger');
-      console.error(err);
     }
   } catch (e) {
     showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
@@ -141,7 +140,16 @@ async function loginUser() {
       currentUserId = data.id;
       const portal = roleToPortal(currentRole);
       showToast('Signed in', `Welcome back. Entering ${labelFor(currentRole)} portal.`, 'success');
-      setTimeout(() => { goScreen(portal); resetPortalStep(portal); }, 600);
+      setTimeout(() => {
+        goScreen(portal);
+        resetPortalStep(portal);
+        if (currentRole === 'manager' || currentRole === 'hr') {
+          loadCompanyTabs();
+        }
+        if (currentRole === 'employee') {
+          loadCompanyList();
+        }
+      }, 600);
     } else {
       showToast('Login failed', 'Invalid email or password.', 'danger');
     }
@@ -176,7 +184,16 @@ async function signupUser() {
       currentUserId = data.id;
       const portal = roleToPortal(currentRole);
       showToast('Account created', `Welcome to WorkOS. Entering ${labelFor(currentRole)} portal.`, 'success');
-      setTimeout(() => { goScreen(portal); resetPortalStep(portal); }, 600);
+      setTimeout(() => {
+        goScreen(portal);
+        resetPortalStep(portal);
+        if (currentRole === 'manager' || currentRole === 'hr') {
+          loadCompanyTabs();
+        }
+        if (currentRole === 'employee') {
+          loadCompanyList();
+        }
+      }, 600);
     } else {
       showToast('Signup failed', data.response ?? 'Could not create account.', 'danger');
     }
@@ -207,6 +224,7 @@ async function logout(prefix) {
     await fetch(endpoint, { method: 'DELETE' });
     showToast('Signed out', 'Logged out successfully', 'info');
     currentUserId = null;
+    currentCompanyId = null;
     setTimeout(() => goScreen('screen-auth'), 700);
   } catch (e) { console.error(e); }
 }
@@ -234,7 +252,44 @@ function resetPortalStep(portalId) {
   });
 }
 
-// EMPLOYEE — BROWSE COMPANIES
+// ──────────────────────────────────────────────────────────────────────────────
+// COMPANY LIST — load from backend for employees to browse
+// ──────────────────────────────────────────────────────────────────────────────
+async function loadCompanyList() {
+  try {
+    const res = await fetch('http://localhost:8080/companies');
+    if (!res.ok) return;
+    const companies = await res.json();
+    renderEmployeeCompanyList(companies);
+  } catch (e) {
+    console.error('Could not load companies', e);
+  }
+}
+
+function renderEmployeeCompanyList(companies) {
+  const list = document.getElementById('empCompanyList');
+  if (!list) return;
+  if (!companies || companies.length === 0) {
+    list.innerHTML = '<p class="muted-sm">No companies found.</p>';
+    return;
+  }
+  list.innerHTML = companies.map(c => {
+    const initials = (c.name || 'CO').substring(0, 2).toUpperCase();
+    return `
+      <div class="company-card" data-name="${c.name || ''}">
+        <div class="cc-logo">${initials}</div>
+        <div class="cc-info">
+          <h3>${c.name || 'Unknown'}</h3>
+          <p>${c.description || ''}</p>
+        </div>
+        <button class="portal-btn primary sm" onclick="openCompanyRoles('${(c.name||'').replace(/'/g,"\\'")}','${c.id}')">
+          <i class="ti ti-briefcase"></i> View Roles
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
 // Company search
 document.getElementById('empCompSearch').addEventListener('input', function() {
   const q = this.value.trim().toLowerCase();
@@ -261,10 +316,11 @@ const ROLES_DATA = {
 function openCompanyRoles(companyName, companyID) {
   const panel = document.getElementById('empRolesPanel');
   document.getElementById('rolesPanelTitle').textContent = `Roles at ${companyName}`;
-  document.getElementById('rolesPanelEndpoint').textContent = `GET /company/${companyID}/roles`;
   const list = document.getElementById('empRolesList');
-  const roles = ROLES_DATA[companyID] ?? [];
-  list.innerHTML = roles.map(r => `
+  const roles = ROLES_DATA[String(companyID)] ?? [];
+  list.innerHTML = roles.length === 0
+    ? '<p class="muted-sm">No roles listed for this company yet.</p>'
+    : roles.map(r => `
     <div class="role-row">
       <div class="role-row-info">
         <h4>${r.title}</h4>
@@ -276,7 +332,7 @@ function openCompanyRoles(companyName, companyID) {
         <span class="role-chip">${r.benefits}</span>
       </div>
       <button class="portal-btn primary sm"
-        onclick="enrollInRole('${companyName}','${companyID}','${r.title}')">
+        onclick="enrollInRole('${companyName.replace(/'/g,"\\'")}','${companyID}','${r.title.replace(/'/g,"\\'")}')">
         <i class="ti ti-user-plus"></i> Enroll
       </button>
     </div>
@@ -325,14 +381,64 @@ async function setAttendance(btn, companyId) {
   } catch(e) { console.error(e); }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// COMPANY TABS — load dynamically for Manager & HR portals
+// ──────────────────────────────────────────────────────────────────────────────
+async function loadCompanyTabs() {
+  try {
+    const res = await fetch('http://localhost:8080/companies');
+    if (!res.ok) return;
+    const companies = await res.json();
+    renderCompanyTabs(companies);
+  } catch (e) {
+    console.error('Could not load company tabs', e);
+  }
+}
+
+function renderCompanyTabs(companies) {
+  const isManager = currentRole === 'manager';
+  const mgrTabsEl = document.getElementById('mgrCompanyTabs');
+  const hrTabsEl  = document.getElementById('hrCompanyTabs');
+
+  const makeTab = (c, selectFn) => {
+    const initials = (c.name || 'CO').substring(0, 2).toUpperCase();
+    const btn = document.createElement('button');
+    btn.className = 'ctab';
+    btn.dataset.company = c.name;
+    btn.dataset.id = c.id;
+    btn.innerHTML = `<span class="ctab-init">${initials}</span><span>${c.name}</span>`;
+    btn.addEventListener('click', () => selectFn(btn));
+    return btn;
+  };
+
+  if (mgrTabsEl && companies.length > 0) {
+    mgrTabsEl.innerHTML = '';
+    companies.forEach(c => mgrTabsEl.appendChild(makeTab(c, selectMgrCompany)));
+    // auto-select first
+    selectMgrCompany(mgrTabsEl.querySelector('.ctab'));
+  } else if (mgrTabsEl) {
+    mgrTabsEl.innerHTML = '<p class="muted-sm">No companies found.</p>';
+  }
+
+  if (hrTabsEl && companies.length > 0) {
+    hrTabsEl.innerHTML = '';
+    companies.forEach(c => hrTabsEl.appendChild(makeTab(c, selectHRCompany)));
+    selectHRCompany(hrTabsEl.querySelector('.ctab'));
+  } else if (hrTabsEl) {
+    hrTabsEl.innerHTML = '<p class="muted-sm">No companies found.</p>';
+  }
+}
+
 // MANAGER — COMPANY TABS
 function selectMgrCompany(btn) {
   qsa('#mgr-companies .ctab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('mgrSelectedCompany').textContent = btn.dataset.company;
   document.getElementById('mgrCompanyID').textContent = `companyID: ${btn.dataset.id}`;
+  currentCompanyId = btn.dataset.id;
   // Reset to Employees sub-tab
   openSubTab(document.querySelector('#mgr-companies .sub-tab'), 'mgr-employees-tab');
+  loadCompanyData(btn.dataset.id, 'mgr');
 }
 
 //  HR — COMPANY TABS
@@ -341,7 +447,9 @@ function selectHRCompany(btn) {
   btn.classList.add('active');
   document.getElementById('hrSelectedCompany').textContent = btn.dataset.company;
   document.getElementById('hrCompanyID').textContent = `companyID: ${btn.dataset.id}`;
+  currentCompanyId = btn.dataset.id;
   openSubTab(document.querySelector('#hr-companies .sub-tab'), 'hr-employees-tab');
+  loadCompanyData(btn.dataset.id, 'hr');
 }
 
 //  Sub-tabs 
@@ -354,47 +462,277 @@ function openSubTab(clickedTab, panelId) {
   document.getElementById(panelId)?.classList.add('active');
 }
 
-// Change Status
-async function openChangeStatus(empId, empName) {
-  pendingStatusTarget = { id: empId, name: empName };
+// ──────────────────────────────────────────────────────────────────────────────
+// LOAD COMPANY DATA (employees + applicants)
+// ──────────────────────────────────────────────────────────────────────────────
+async function loadCompanyData(companyId, prefix) {
+  if (!companyId) return;
+  try {
+    const [empRes, appRes] = await Promise.all([
+      fetch(`http://localhost:8080/User/director/company/${companyId}/employees`),
+      fetch(`http://localhost:8080/Company/${companyId}/applicants`)
+    ]);
+
+    if (empRes.ok) {
+      const employees = await empRes.json();
+      renderEmployeesTable(employees, companyId, prefix);
+    }
+
+    if (appRes.ok) {
+      const appData = await appRes.json();
+      const applicants = appData.applicants ?? appData;
+      renderApplicantsTable(applicants, companyId, prefix);
+    }
+  } catch (e) {
+    console.error('Could not load company data', e);
+  }
+}
+
+// Refresh shortcut called by the Refresh button in templates
+function refreshCurrentCompanyData() {
+  const prefix = currentRole === 'hr' ? 'hr' : 'mgr';
+  if (currentCompanyId) {
+    loadCompanyData(currentCompanyId, prefix);
+  } else {
+    showToast('No company selected', 'Please select a company first.', 'danger');
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RENDER EMPLOYEES TABLE
+// ──────────────────────────────────────────────────────────────────────────────
+function renderEmployeesTable(employees, companyId, prefix) {
+  const tbodyId = prefix === 'mgr' ? 'mgrEmployeesBody' : 'hrEmployeesBody';
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+
+  if (!employees || employees.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:24px">No employees yet</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = employees.map(emp => {
+    const statusClass = statusBadgeClass(emp.status);
+    const actionsHtml = prefix === 'mgr'
+      ? `<button class="portal-btn outline sm" onclick="openChangeStatus('${emp.id}','${(emp.name||'').replace(/'/g,"\\'")}', this.closest('tr'))">
+           <i class="ti ti-arrows-exchange"></i> Status
+         </button>
+         <button class="portal-btn danger sm" onclick="confirmFire('${(emp.name||'').replace(/'/g,"\\'")}','${companyId}','${emp.id}', this.closest('tr'))">
+           <i class="ti ti-user-minus"></i> Fire
+         </button>`
+      : `<button class="portal-btn outline sm" onclick="openChangeStatus('${emp.id}','${(emp.name||'').replace(/'/g,"\\'")}', this.closest('tr'))">
+           <i class="ti ti-arrows-exchange"></i> Status
+         </button>`;
+
+    return `<tr data-emp-id="${emp.id}">
+      <td><strong>${emp.name || 'Unknown'}</strong></td>
+      <td class="mono" style="font-size:12px">${emp.specialties || '—'}</td>
+      <td><span class="status-badge ${statusClass}">${emp.status || 'Active'}</span></td>
+      <td class="table-actions">${actionsHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+function statusBadgeClass(status) {
+  const map = {
+    'active':     'badge-active',
+    'on leave':   'badge-leave',
+    'suspended':  'badge-suspended',
+    'probation':  'badge-probation',
+    'terminated': 'badge-terminated',
+    'manager':    'badge-manager',
+    'hr manager': 'badge-manager',
+    'director':   'badge-manager',
+  };
+  return map[(status || '').toLowerCase()] || 'badge-active';
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RENDER APPLICANTS TABLE
+// ──────────────────────────────────────────────────────────────────────────────
+function renderApplicantsTable(applicants, companyId, prefix) {
+  const tbodyId = prefix === 'mgr' ? 'mgrApplicantsBody' : 'hrApplicantsBody';
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+
+  if (!applicants || applicants.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:24px">No applicants yet</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = applicants.map(app => {
+    const hireBtn = prefix === 'mgr'
+      ? `<button class="portal-btn primary sm" onclick="hireApplicant('${app.id}','${companyId}','${(app.employeeName||'').replace(/'/g,"\\'")}', this.closest('tr'))">
+           <i class="ti ti-user-check"></i> Hire
+         </button>`
+      : `<span class="muted-sm">—</span>`;
+
+    return `<tr data-app-id="${app.id}">
+      <td><strong>${app.employeeName || 'Unknown'}</strong></td>
+      <td>$${app.pricingBid?.toLocaleString() ?? '—'}</td>
+      <td>
+        <button class="portal-btn outline sm" onclick="viewResume('${app.id}')">
+          <i class="ti ti-file-description"></i> View
+        </button>
+      </td>
+      <td class="table-actions">${hireBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HIRE EMPLOYEE — called from applicants table
+// ──────────────────────────────────────────────────────────────────────────────
+async function hireApplicant(empId, companyId, empName, rowEl) {
+  try {
+    const res = await fetch(`http://localhost:8080/User/director/company/${companyId}/hire/${empId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok) {
+      showToast('Hired!', `${empName} has been hired and is now Active.`, 'success');
+
+      // 1. Remove the applicant row from the applicants table
+      if (rowEl) rowEl.remove();
+
+      // 2. Add the new employee to the employees table immediately
+      const prefix = currentRole === 'hr' ? 'hr' : 'mgr';
+      const tbodyId = prefix === 'mgr' ? 'mgrEmployeesBody' : 'hrEmployeesBody';
+      const tbody = document.getElementById(tbodyId);
+      if (tbody) {
+        // Remove the "no employees" placeholder if present
+        const placeholder = tbody.querySelector('td[colspan]');
+        if (placeholder) placeholder.closest('tr').remove();
+
+        const actionsHtml = prefix === 'mgr'
+          ? `<button class="portal-btn outline sm" onclick="openChangeStatus('${empId}','${empName.replace(/'/g,"\\'")}', this.closest('tr'))">
+               <i class="ti ti-arrows-exchange"></i> Status
+             </button>
+             <button class="portal-btn danger sm" onclick="confirmFire('${empName.replace(/'/g,"\\'")}','${companyId}','${empId}', this.closest('tr'))">
+               <i class="ti ti-user-minus"></i> Fire
+             </button>`
+          : `<button class="portal-btn outline sm" onclick="openChangeStatus('${empId}','${empName.replace(/'/g,"\\'")}', this.closest('tr'))">
+               <i class="ti ti-arrows-exchange"></i> Status
+             </button>`;
+
+        const tr = document.createElement('tr');
+        tr.dataset.empId = empId;
+        tr.innerHTML = `
+          <td><strong>${empName}</strong></td>
+          <td class="mono" style="font-size:12px">—</td>
+          <td><span class="status-badge badge-active">Active</span></td>
+          <td class="table-actions">${actionsHtml}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    } else {
+      const err = await res.text();
+      showToast('Hire failed', `Server error: ${res.status}`, 'danger');
+      console.error(err);
+    }
+  } catch (e) {
+    showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
+    console.error(e);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CHANGE STATUS — modal + API + DOM update
+// ──────────────────────────────────────────────────────────────────────────────
+function openChangeStatus(empId, empName, rowEl) {
+  pendingStatusTarget = { id: empId, name: empName, rowEl };
   document.getElementById('statusTargetName').textContent = empName;
   show('modal-status');
 }
+
 async function submitChangeStatus() {
   const status = document.getElementById('statusSelect').value;
   try {
     const res = await fetch(`http://localhost:8080/User/director/changeStatus/${pendingStatusTarget.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: status
+      body: JSON.stringify(status)
     });
-    if (res.ok) showToast('Success', `${pendingStatusTarget.name}'s status changed to "${status}".`, 'success');
-  } catch(e) { console.error(e); }
+
+    if (res.ok) {
+      showToast('Status updated', `${pendingStatusTarget.name}'s status changed to "${status}".`, 'success');
+
+      // Update the status badge in the DOM
+      const rowEl = pendingStatusTarget.rowEl;
+      if (rowEl) {
+        const badge = rowEl.querySelector('.status-badge');
+        if (badge) {
+          badge.textContent = status;
+          badge.className = `status-badge ${statusBadgeClass(status)}`;
+        }
+
+        // If promoted to Manager / HR Manager / Director — remove row from employees table
+        const promotions = ['manager', 'hr manager', 'director'];
+        if (promotions.includes(status.toLowerCase())) {
+          setTimeout(() => {
+            rowEl.style.transition = 'opacity 0.4s';
+            rowEl.style.opacity = '0';
+            setTimeout(() => rowEl.remove(), 400);
+          }, 800);
+          showToast('Promoted!', `${pendingStatusTarget.name} has been promoted to ${status}.`, 'success');
+        }
+      }
+    } else {
+      showToast('Failed', `Server error: ${res.status}`, 'danger');
+    }
+  } catch (e) {
+    showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
+    console.error(e);
+  }
   closeModal('modal-status');
 }
 
-// Fire
-function confirmFire(name, companyID, empId) {
-  pendingFireTarget = { name, companyID, empId };
+// ──────────────────────────────────────────────────────────────────────────────
+// FIRE EMPLOYEE — modal + API + DOM removal
+// ──────────────────────────────────────────────────────────────────────────────
+function confirmFire(name, companyID, empId, rowEl) {
+  pendingFireTarget = { name, companyID, empId, rowEl };
   document.getElementById('fireTargetName').textContent = name;
   show('modal-fire');
 }
+
 async function submitFire() {
   try {
     const res = await fetch(`http://localhost:8080/User/director/${pendingFireTarget.companyID}/fire/${pendingFireTarget.empId}`, {
       method: 'DELETE'
     });
-    if (res.ok) showToast('Fired', `${pendingFireTarget.name} has been removed.`, 'success');
-  } catch(e) { console.error(e); }
+
+    if (res.ok) {
+      showToast('Fired', `${pendingFireTarget.name} has been removed from the company.`, 'success');
+
+      // Remove the row from the employees table immediately
+      const rowEl = pendingFireTarget.rowEl;
+      if (rowEl) {
+        rowEl.style.transition = 'opacity 0.3s, transform 0.3s';
+        rowEl.style.opacity = '0';
+        rowEl.style.transform = 'translateX(20px)';
+        setTimeout(() => rowEl.remove(), 300);
+      }
+    } else {
+      showToast('Failed', `Could not fire employee. Server error: ${res.status}`, 'danger');
+    }
+  } catch (e) {
+    showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
+    console.error(e);
+  }
   closeModal('modal-fire');
 }
 
-// Quit
+// ──────────────────────────────────────────────────────────────────────────────
+// QUIT JOB (Employee)
+// ──────────────────────────────────────────────────────────────────────────────
 function confirmQuit(company, companyID) {
   pendingQuitTarget = { company, companyID };
   document.getElementById('quitTargetCompany').textContent = company;
   show('modal-quit');
 }
+
 async function submitQuit() {
   const userId = currentUserId ?? 1;
   try {
@@ -406,7 +744,24 @@ async function submitQuit() {
   closeModal('modal-quit');
 }
 
-// Manager functions
+// ──────────────────────────────────────────────────────────────────────────────
+// VIEW RESUME
+// ──────────────────────────────────────────────────────────────────────────────
+async function viewResume(employeeId) {
+  try {
+    const res = await fetch(`http://localhost:8080/User/resume/${employeeId}`);
+    if (res.ok) {
+      const specialties = await res.text();
+      showToast('Resume', specialties || 'No specialities listed.', 'info');
+    } else {
+      showToast('No Resume', 'No resume found for this applicant.', 'info');
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MANAGER — Business & Offer creation
+// ──────────────────────────────────────────────────────────────────────────────
 async function createBusiness() {
   const userId = currentUserId ?? 1;
   const grid = document.querySelector('#mgr-create-biz .offer-form-grid');
@@ -425,8 +780,17 @@ async function createBusiness() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(business)
     });
-    if (res.ok) showToast('Success', 'Business created successfully.', 'success');
-  } catch(e) { console.error(e); }
+    if (res.ok) {
+      showToast('Success', 'Business created successfully.', 'success');
+      // Reload company tabs to include the new company
+      loadCompanyTabs();
+    } else {
+      showToast('Failed', `Server error: ${res.status}`, 'danger');
+    }
+  } catch(e) {
+    showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
+    console.error(e);
+  }
 }
 
 async function createOffer() {
@@ -455,11 +819,17 @@ async function createOffer() {
       body: JSON.stringify(offer)
     });
     if (res.ok) showToast('Success', 'Job offer created successfully.', 'success');
-  } catch(e) { console.error(e); }
+    else showToast('Failed', `Server error: ${res.status}`, 'danger');
+  } catch(e) {
+    showToast('Connection Error', 'Make sure the backend is running on port 8080.', 'danger');
+    console.error(e);
+  }
 }
 
-
-function closeModal(id) { hide(id) }
+// ──────────────────────────────────────────────────────────────────────────────
+// MODALS
+// ──────────────────────────────────────────────────────────────────────────────
+function closeModal(id) { hide(id); }
 
 // Close modal on backdrop click
 qsa('.modal-backdrop').forEach(bd => {
@@ -475,14 +845,14 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// GENERIC ACTION HANDLER
+// GENERIC ACTION HANDLER (kept for any remaining usages)
 async function handleAction(endpoint, message) {
   const parts = endpoint.split(' ');
   const method = parts.length > 1 ? parts[0] : 'POST';
   let url = parts.length > 1 ? parts[1] : parts[0];
 
   url = url.replace(/^\/user\//i, '/User/');
-  const finalUrl = `http://localhost:8080${url.replace(/{[^}]+}/g, '1')}`; 
+  const finalUrl = `http://localhost:8080${url.replace(/{[^}]+}/g, currentCompanyId || '1')}`; 
 
   try {
     const response = await fetch(finalUrl, {
@@ -502,7 +872,9 @@ async function handleAction(endpoint, message) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
 // TOAST
+// ──────────────────────────────────────────────────────────────────────────────
 let toastTimer = null;
 
 function showToast(title, message, type = 'success') {
@@ -530,4 +902,4 @@ function showToast(title, message, type = 'success') {
 
 //  Init
 goScreen('screen-auth');
-console.log('[WorkOS] v3 loaded — Employee · Manager · HR Manager portals');
+console.log('[WorkOS] v4 loaded — Employee · Manager · HR Manager portals');
